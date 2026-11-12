@@ -12,3 +12,6 @@ venv/
 # OS / editor
 .DS_Store
 .vscode/
+
+# Sunny: EIA per-BA workbook + cache (the notebook downloads it)
+sunny/data/
