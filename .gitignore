@@ -1,6 +1,6 @@
 # Download caches (rebuild with build_dataset.py)
-data/raw/
-data/interim/
+**/data/raw/
+**/data/interim/
 
 # Python / Jupyter
 __pycache__/
