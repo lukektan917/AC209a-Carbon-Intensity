@@ -25,6 +25,10 @@ Colab already has everything in `requirements.txt` installed. Each notebook star
 
 If `data/pjm_hourly.csv` is missing, the setup cell runs `build_dataset.py` first.
 
+## Notebooks
+
+- `ms2_data.ipynb` (**Milestone 2**): getting the data and its size, what each row and column is, summary statistics, cleaning decisions (missing data, unusual values, class balance, feature scale, leakage), and the revised project question. It writes the cleaned modeling table `data/pjm_clean.parquet`: 67,712 rows × 51 columns, with a `split` column (train 2019–22 without Jan 2020, validation 2023, test 2024+).
+
 ## EDA
 
 `eda.ipynb` covers data quality, trend, daily patterns, generation mix, drivers, scheduling headroom and baselines, forecastability, weather, and the interchange sensitivity check. The summary of findings is at the end of the notebook. Figures are saved to `figures/` for the writeup.
@@ -50,12 +54,16 @@ For 2025, this gives coal ≈ 1,022, natural gas ≈ 412 and oil ≈ 813 kg CO�
 
 Hourly intensity = Σ(generation by fuel × factor) / Σ(generation by fuel). Negative values (pumped-storage pumping, battery charging) are treated as 0 because they are consumption, not generation.
 
-Intensity is left blank when the fuel breakdown covers less than 80% of reported net generation. That happens when fuels are missing from the report. This leaves 610 hours blank:
+Intensity is left blank in two cases:
 
-- 564 are in **January 2020**, when every fuel is reported at about 77% of total net generation.
-- A handful are scattered elsewhere. For example, on 1–2 Oct 2022 PJM reported about 300 MW by fuel against 75 GW total.
+- **The fuel breakdown is outside 85–115% of reported net generation.** A fuel is missing or double-reported. The comparison is made before negatives are clipped, because net generation is net of pumped-storage pumping. Examples:
+  - January 2020, when every fuel is reported at about 77% of total net generation.
+  - 1–2 Oct 2022: about 300 MW reported by fuel against 75 GW in total.
+  - 11 Feb 2022: half of nuclear missing.
+  - 30 Sep 2022: 46 GW of nuclear, above PJM's capacity.
+- **The whole fuel mix is an exact copy of 24 hours earlier.** EIA fills some gaps by copying the previous day: on every daylight-saving change, and for 2–8 Jun 2026. A copy is not a measurement, and it would make the "same hour yesterday" baseline look perfect.
 
-Drop these hours or interpolate them, and say which in the writeup.
+Together this leaves 1,159 hours (1.7%) blank, 710 of them in January 2020. Drop them; don't interpolate the target. `ms2_data.ipynb` applies this and the other cleaning decisions.
 
 **Interchange.** There are two versions:
 
@@ -88,6 +96,7 @@ Compare scheduling savings under both versions. If they barely differ, the inter
 ### Quality flags
 
 - `qa_missing_hour`: no EIA data for this hour.
+- `qa_fuel_mix_repeated`: every fuel value equals the value 24 h earlier (EIA copied the previous day). The target is blank for these hours.
 - `qa_balance_mismatch`: demand differs from net generation − interchange by more than 2%. It is near 0% in 2021–24, but common in 2019–20 and again from May 2025 on, mostly in summer, with demand 1–3 GW below generation − interchange. This is in EIA's data. It affects the demand columns, **not** carbon intensity, which uses only the fuel mix.
 - `qa_fuel_sum_mismatch`: the fuel breakdown differs from total net generation by more than 5%. A ±3% daily-cycle gap is normal for PJM.
 - `qa_neighbor_ci_filled`: a neighbor's intensity was missing, so PJM's was used for its imports.

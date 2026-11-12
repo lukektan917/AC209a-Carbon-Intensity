@@ -8,7 +8,7 @@ Nov 11, 2026 · Drafted by Luke Tan
 
 ## Summary
 
-We have a cleaned hourly dataset for PJM covering 1 Jan 2019 to 11 Nov 2026: 68,928 hours, with carbon intensity calculated for 99.1% of them.
+We have a cleaned hourly dataset for PJM covering 1 Jan 2019 to 11 Nov 2026: 68,904 hours, with carbon intensity calculated for 98.3% of them.
 
 - Quality control found five kinds of problems in EIA-930. Each one is now flagged or corrected, and none blocks the project.
 - The proposal's scope stays the same, but its method needs tightening (full list in section 8). The main changes:
@@ -29,7 +29,7 @@ All sources are public and need no API key. One script (`build_dataset.py`) rebu
 | [EIA Electric Power Annual, Table 8.1](https://www.eia.gov/electricity/annual/html/epa_08_01.html) | Average heat rate by fuel (Btu/kWh) | 2015–2025, by year | 2026 reuses 2025 |
 | [NOAA GHCNh](https://www.ncei.noaa.gov/products/global-historical-climatology-network-hourly) | Hourly temperature, dew point, wind | 2019–2026 | Averaged over 6 airports in PJM load centers: PHL, ORD, IAD, BWI, PIT, CMH |
 
-The output, `data/pjm_hourly.csv`, has one row per hour and 51 columns:
+The output, `data/pjm_hourly.csv`, has one row per hour and 52 columns:
 
 - **Calendar:** UTC and Eastern time.
 - **Grid:** demand and EIA's demand forecast, generation by fuel, per-neighbor flows.
@@ -69,17 +69,17 @@ We compute two targets:
 - **Production-based (primary):** emissions from power generated inside PJM, divided by that generation. Imports and exports are ignored.
 - **Consumption-based (sensitivity):** power PJM keeps (generation minus exports) is counted at PJM's intensity. Imports from each neighbor are counted at that neighbor's own production-based intensity, computed the same way from EIA-930.
 
-The two correlate at 0.997, differ by +0.2 kg/MWh on average (5th–95th percentile: −3.8 to +6.3), and pick the same cleanest hour on 84% of days. Imports are only 2–4% of PJM demand, so even dirty neighbors such as LG&E-KU (≈905 kg/MWh) barely move the result. The final scheduling results will be reported under both definitions.
+The two correlate at 0.997, differ by +0.2 kg/MWh on average (5th–95th percentile: −3.8 to +6.4), and pick the same cleanest hour on 84% of days. In the median hour imports are only about 2% of PJM demand, so even dirty neighbors such as LG&E-KU (≈905 kg/MWh) barely move the result. The final scheduling results will be reported under both definitions.
 
 ## Quality assurance and quality control
 
 We ran 14 checks. Four found problems that would have biased the target if left alone. All are now fixed or flagged in the data, with a `qa_*` column per check.
 
-| # | Check | What it tests | Result (68,928 hours) |
+| # | Check | What it tests | Result (68,904 hours) |
 | --- | --- | --- | --- |
 | 1 | Complete hourly index | Missing or duplicate UTC hours; DST days | 0 missing, 0 duplicates; 8 days of 23 h and 8 of 25 h, handled by using UTC |
 | 2 | Column schema across files | EIA renaming or splitting categories | **Found:** from Jul 2024, EIA splits hydro, solar and wind and adds storage. Our first build dropped them, so intensity was too high. Fixed by summing the subcategories |
-| 3 | Fuel coverage | Fuel breakdown ≥ 80% of reported net generation | **Found:** 610 hours below 80%, 564 of them in Jan 2020. Intensity left blank |
+| 3 | Fuel coverage | Fuel breakdown within 85–115% of reported net generation, and not an exact copy of the previous day | **Found:** 1,159 hours fail: 710 in Jan 2020, and 372 where EIA copied the previous day's fuel mix (every DST change; 2–8 Jun 2026). Intensity left blank |
 | 4 | Fuel sum vs. total | Fuel breakdown within 5% of net generation | 3,497 hours flagged. A ±3% daily-cycle gap is normal for PJM |
 | 5 | Demand balance | Demand = net generation − total interchange, within 2% | **Found:** 15,108 hours flagged, concentrated in 2019–20 and from May 2025 (chart below) |
 | 6 | Interchange consistency | Reported total interchange vs. sum of per-neighbor flows | 55% of hours differ by >2% of demand. EIA's own "Sum(Valid DIBAs)" column shows the same gap. Informational only |
@@ -105,7 +105,7 @@ The target is protected first: any hour whose intensity can't be trusted is left
 | Issue | Decision | Effect on modeling |
 | --- | --- | --- |
 | EIA category split (Jul 2024) | Sum subcategories back to hydro, solar, wind; storage is its own fuel at 0 kg/MWh | Consistent fuel columns across all years |
-| Partial fuel reports (610 hours, mostly Jan 2020) | Intensity left blank | Drop Jan 2020 from training and evaluation; drop the other 46 scattered hours |
+| Partial, double-reported or copied fuel data (1,159 hours, mostly Jan 2020) | Intensity left blank | Drop Jan 2020 from training and evaluation; drop the other scattered hours |
 | Demand balance failures (2019–20, May 2025 on) | Keep reported demand, flag the hour | Prefer EIA's day-ahead demand forecast as the demand feature; test whether excluding flagged hours changes results |
 | 2019 interchange looks reversed | Keep, but don't trust 2019 flows | Leave 2019 out of the consumption-based sensitivity check |
 | 4 demand values above 175 GW | Treat as missing | Clip before building demand features |
@@ -123,16 +123,16 @@ A fixed hour learned from 2019–23 (2:00) captures almost none of the possible 
 
 | Schedule | Mean kg CO₂/MWh | Saving | Share of oracle saving |
 | --- | --- | --- | --- |
-| Random start hour | 336.6 | 0% | 0% |
-| Fixed hour learned on 2019–23 (2:00) | 335.4 | 0.4% | 5% |
-| Always 9:00 | 326.3 | 3.1% | 43% |
-| Yesterday's cleanest hour | 322.2 | 4.3% | 60% |
-| Oracle (perfect foresight) | 312.8 | 7.1% | 100% |
+| Random start hour | 336.3 | 0% | 0% |
+| Fixed hour learned on 2019–23 (2:00) | 335.1 | 0.3% | 5% |
+| Always 9:00 | 326.1 | 3.1% | 43% |
+| Yesterday's cleanest hour | 321.9 | 4.3% | 60% |
+| Oracle (perfect foresight) | 312.5 | 7.1% | 100% |
 
 Other findings:
 
 - **Headroom:** the median day's spread between dirtiest and cleanest hour is 13% of its mean (90th percentile 22%). It is largest in spring and early summer.
-- **Predictability:** intensity is strongly correlated with itself 24 hours earlier (0.89). Same-hour-yesterday has MAE 16.5 kg/MWh (4.9% of the mean). Month-by-hour averages do much worse (MAE 35.9).
+- **Predictability:** intensity is strongly correlated with itself 24 hours earlier (0.89). Same-hour-yesterday has MAE 16.7 kg/MWh (5.0% of the mean). Month-by-hour averages do much worse (MAE 36.0).
 - **Drivers:** within a day, intensity rises with coal output (r = +0.79), gas (+0.61) and demand (+0.51), and falls with solar (−0.36) and wind (−0.32). The 18:00–22:00 evening peak is the dirtiest time in every season.
 - **Level drift:** mean intensity fell from 383 kg/MWh (2019) to 328 (2024), then rose to 343 (2025) as coal output recovered.
 

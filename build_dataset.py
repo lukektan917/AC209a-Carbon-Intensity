@@ -143,6 +143,11 @@ def balance_half(year, months, bas, keep_raw):
     raw = download(EIA_BASE + name, RAW / name)
     d = pd.read_csv(raw, dtype=str)
     d = d[d["Balancing Authority"].isin(bas)]
+    # EIA's newer files have typos in two "(Adjusted)" column names
+    # ("Pumped Storage  (Adjusted)", and "Solar witho Integrated ..." for the
+    # with-battery column). Normalize them so the adjusted values are found.
+    d.columns = [" ".join(c.split()).replace(" witho ", " with ") for c in d.columns]
+    assert not d.columns.duplicated().any(), "duplicate column names after cleanup"
 
     def col(base):
         """Prefer EIA's cleaned '(Adjusted)' value, fall back to the reported one."""
@@ -176,15 +181,20 @@ def carbon_intensity(df, year_col, other_factor):
     Negative fuel values (pumped-storage pumping, battery charging, station
     load) are set to 0: they are consumption, not generation.
     """
-    gen = df[[f"gen_{f}_mw" for f in FUELS]].clip(lower=0).fillna(0)
+    gen = df[[f"gen_{f}_mw" for f in FUELS]].clip(lower=0)
     table = factor_table(sorted(df[year_col].unique()), other_factor).set_index("year")
     ef = table.loc[df[year_col].values].set_index(df.index)
-    co2_kg = sum(gen[f"gen_{f}_mw"] * ef[f] for f in FUELS)  # MW * kg/MWh over 1 h = kg
-    total = gen.sum(axis=1)
-    # If the fuel breakdown covers < 80% of reported net generation, fuels are
-    # missing from the report (e.g. PJM, 1-2 Oct 2022: 300 MW of 75 GW), and the
-    # ratio would be meaningless. Leave intensity blank for those hours.
-    complete = (total > 0) & ~(total < 0.8 * df["net_gen_mw"])
+    co2_kg = sum(gen[f"gen_{f}_mw"].fillna(0) * ef[f] for f in FUELS)  # MW * kg/MWh over 1 h = kg
+    total = gen.sum(axis=1, min_count=1)  # NaN when no fuel is reported at all
+    # The fuel breakdown should roughly match reported net generation. Outside
+    # 85-115%, a fuel is missing or double-reported, e.g. PJM 1-2 Oct 2022
+    # (300 MW of 75 GW), 11 Feb 2022 (half of nuclear missing), 30 Sep 2022
+    # (46 GW of nuclear, above PJM's capacity). Leave intensity blank.
+    # Compare *before* clipping: net generation is net of pumped-storage pumping,
+    # which is large for some neighbors (e.g. Duke).
+    raw_total = df[[f"gen_{f}_mw" for f in FUELS]].sum(axis=1, min_count=1)
+    ratio = raw_total / df["net_gen_mw"]
+    complete = (total > 0) & ~(ratio < 0.85) & ~(ratio > 1.15)
     ci = (co2_kg / total).where(complete)
     return ci, (co2_kg / 1000).where(complete), total
 
@@ -237,6 +247,9 @@ def weather(years):
             log(f"  weather {y} {name}")
             frames.append(weather_station_year(st, y))
     w = pd.concat([f for f in frames if len(f)])
+    # An observation just before midnight on 31 Dec rounds into the next year, so
+    # the same station-hour can come from two yearly files. Keep one per station.
+    w = w.groupby(["datetime_utc", "station"]).mean().reset_index()
     agg = w.groupby("datetime_utc").agg(
         temp_c=("temp_c", "mean"),
         dewpoint_c=("dewpoint_c", "mean"),
@@ -287,11 +300,24 @@ def main():
 
     # 3. PJM table on a complete hourly index (missing hours become NaN rows)
     pjm = bal[bal["ba"] == BA].set_index("datetime_utc").sort_index()
+    # EIA's files run to the end of the current day with empty placeholder rows;
+    # stop at the last hour that has data.
+    has_data = pjm["demand_mw"].notna() | pjm["fuel_sum_mw"].notna()
+    pjm = pjm.loc[: has_data[has_data].index.max()]
     full = pd.date_range(pjm.index.min(), pjm.index.max(), freq="h", tz="UTC", name="datetime_utc")
     pjm = pjm.reindex(full)
     pjm["qa_missing_hour"] = pjm["demand_mw"].isna() & pjm["fuel_sum_mw"].isna()
     pjm["eia_imputed"] = pjm["eia_imputed"].fillna(False).astype(bool)
     pjm = pjm.drop(columns=["ba", "year"]).rename(columns={"ci_kg_per_mwh": "ci_prod_kg_per_mwh"})
+
+    # When data are missing (e.g. on daylight-saving days, and 2-8 Jun 2026), EIA
+    # sometimes fills them by copying the previous day. A copied fuel mix is not a
+    # measurement, and it would make "same hour yesterday" look perfect, so the
+    # target is left blank for those hours.
+    fuel_cols = [f"gen_{f}_mw" for f in FUELS if pjm[f"gen_{f}_mw"].notna().any()]
+    g = pjm[fuel_cols]
+    pjm["qa_fuel_mix_repeated"] = (g.notna().all(axis=1) & (g == g.shift(24)).all(axis=1))
+    pjm.loc[pjm["qa_fuel_mix_repeated"], ["ci_prod_kg_per_mwh", "co2_t"]] = np.nan
 
     # Neighbor intensities, one column each
     nb = bal[bal["ba"].isin(neighbors)].pivot_table(
