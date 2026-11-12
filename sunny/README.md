@@ -1,6 +1,9 @@
-# AC 209A project — Predicting low-carbon hours on the PJM grid
+# Sunny's folder — preliminary EDA of PJM carbon intensity (EIA-930 workbook)
 
 Handoff notes for whoever (human or Claude Code) picks this up next. Read this first.
+This is an independent pass over the same PJM data as `luke/`, built from EIA's single per-BA xlsx rather than
+the six-month files, and it uses EIA's own CO₂ columns rather than recomputing factors. Useful as a cross-check
+of the pipeline in `luke/`; the next step is to merge the two and add ERCOT and the interchange data.
 
 ## Project in one paragraph
 
@@ -14,21 +17,20 @@ schedule. Owner: Sunny (AC 209A group project). The proposal text is not final.
 ## Where things are
 
 ```
-ac209a_carbon/
-├── CLAUDE.md                 ← this file
+sunny/
+├── README.md                 ← this file
 ├── pjm_carbon_eda.ipynb      ← preliminary EDA, fully executed, all preprocessing shown in-notebook
 ├── requirements.txt
-├── .gitignore                (ignores data/)
-└── data/
-    ├── PJM.xlsx              ← RAW input, 115 MB, EIA Grid Monitor per-BA download (not in git)
+└── data/                     (git-ignored; the notebook creates it)
+    ├── PJM.xlsx              ← RAW input, 115 MB, EIA Grid Monitor per-BA download, fetched on first run
     └── pjm_hourly.csv        ← cache written by the notebook on first run (sheet "Published Hourly Data")
 ```
 
-Raw data URL: `https://www.eia.gov/electricity/gridmonitor/knownissues/xls/PJM.xlsx` (EIA-930). Re-download
-to refresh; delete `data/pjm_hourly.csv` afterwards so the notebook re-parses. Coverage: 2015-07-01 →
+Raw data URL: `https://www.eia.gov/electricity/gridmonitor/knownissues/xls/PJM.xlsx` (EIA-930). The notebook
+downloads it if `data/` is empty. To refresh, delete `data/` and re-run. Coverage: 2015-07-01 →
 2026-11-11 hourly; **fuel mix and CO2 columns only from mid-2018**, so the analysis window is 2019-01-01 onward.
 
-To run: `pip install -r requirements.txt` then open the notebook. First run takes ~30 s to parse the xlsx.
+To run: `cd sunny && pip install -r requirements.txt`, then open the notebook. First run downloads ~115 MB and takes ~30 s to parse the xlsx.
 
 ## What the EDA established (don't redo these — build on them)
 
@@ -103,7 +105,7 @@ If you factor the preprocessing out into a module, keep it identical to notebook
 
 ## Conventions
 
-- Keep everything reproducible from `data/PJM.xlsx`; never commit `data/` (see .gitignore).
+- Keep everything reproducible from `data/PJM.xlsx`; never commit `sunny/data/` (root .gitignore).
 - Intensity unit in code: lb/kWh in `ci` (EIA's native), g/kWh in `ci_g` for plots and the report.
 - Time zone: store UTC, compute hour-of-day in `America/New_York`.
 - Course context: AC 209A (Data Science I). Expect to be graded on EDA clarity, correct validation, and honest
