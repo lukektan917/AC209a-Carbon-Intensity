@@ -1,0 +1,14 @@
+# Download caches (rebuild with build_dataset.py)
+data/raw/
+data/interim/
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.vscode/
