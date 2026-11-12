@@ -1,0 +1,4 @@
+# raw EIA-930 downloads (2.3 GB); the notebook re-downloads them if missing
+data/raw
+# uncompressed copy of the cleaned table (136 MB, over GitHub's 100 MB limit); the .csv.gz is committed
+data/regions_hourly_clean.csv
