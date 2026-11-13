@@ -1,4 +1,4 @@
-# Clara: ERCOT's own fuel-mix data (Texas)
+# ERCOT's own fuel-mix data (Texas)
 
 This folder uses **ERCOT's own published generation-by-fuel data** to study when the Texas grid is cleanest. It is a second source next to the team's EIA-930 data (Amy's `TEX` region).
 
